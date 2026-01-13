@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{ product[0] }} - TrueInsight</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+    <nav class="navbar">
+        <div class="navbar-content">
+            <a href="/home" class="navbar-brand">
+                <div class="navbar-logo">TI</div>
+                TrueInsight
+            </a>
+            <div class="navbar-actions">
+                <a href="/home" class="btn-icon" aria-label="Home">⌂</a>
+                <a href="/logout" class="btn-logout">Sign Out</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="product-detail-container">
+
+        <div class="detail-actions">
+            <a href="/home" class="back-link">← Back to Products</a>
+        </div>
+
+        <div class="detail-grid">
+            <div class="product-image-large">
+                {% if product[4] %}
+                <img src="{{ product[4] }}" alt="{{ product[0] }}">
+                {% else %}
+                <div class="no-image">No image available</div>
+                {% endif %}
+            </div>
+
+            <div class="product-info">
+                <h1 class="product-detail-name">{{ product[0] }}</h1>
+                <div class="product-detail-price">₹{{ product[2] }}</div>
+                <div class="product-detail-rating">
+                    <span class="stars">★</span>
+                    <span class="rating-text">{{ raw_rating or product[3] }} / 5</span>
+                </div>
+                <p class="product-description">{{ product[1] }}</p>
+
+                <div class="rating-panels">
+                    <div class="rating-card">
+                        <h4>Raw Rating</h4>
+                        <div class="rating-value">{{ raw_rating or product[3] }}</div>
+                        <div class="rating-note">Unfiltered average</div>
+                    </div>
+                    <div class="rating-card">
+                        <h4>Filtered Rating</h4>
+                        <div class="rating-value">{{ filtered_rating or 'N/A' }}</div>
+                        <div class="rating-note">After removing suspicious reviews</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="integrity-panel">
+            <div class="integrity-title">Review Integrity</div>
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Reviews</div>
+                    <div class="stat-value">{{ integrity.total }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Genuine</div>
+                    <div class="stat-value">{{ integrity.genuine }}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Suspicious</div>
+                    <div class="stat-value">{{ integrity.suspicious }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="reviews-section">
+            <h2 class="reviews-title">Customer Reviews</h2>
+
+            {% if reviews %}
+            {% for r in reviews %}
+            <div class="review-card">
+                <div class="review-header">
+                    <span class="review-rating">★ {{ r.rating }} / 5</span>
+                    <span class="review-date">{{ r.created_at }}</span>
+                </div>
+
+                <p class="review-text">{{ r.text }}</p>
+
+                {% if r.suspicious %}
+                <span class="review-badge review-badge-suspicious">⚠ Suspicious Review</span>
+                <div class="review-reason"><strong>Reason:</strong> {{ r.reasons }}</div>
+                {% else %}
+                <span class="review-badge review-badge-genuine">✓ Likely Genuine</span>
+                {% endif %}
+            </div>
+            {% endfor %}
+            {% else %}
+            <p class="no-reviews">No reviews yet.</p>
+            {% endif %}
+        </div>
+
+    </div>
+
+</body>
+
+</html>
