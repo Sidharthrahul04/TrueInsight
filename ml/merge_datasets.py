@@ -1,19 +1,18 @@
 import pandas as pd
 
-# Load datasets
 system_df = pd.read_csv("ml/review_dataset.csv")
 kaggle_df = pd.read_csv("ml/kaggle_features.csv")
 
-print("System dataset size:", system_df.shape)
-print("Kaggle dataset size:", kaggle_df.shape)
+# Add missing columns to kaggle dataset
+for col in system_df.columns:
+    if col not in kaggle_df.columns:
+        kaggle_df[col] = 0
 
-# Combine both datasets
+# Reorder columns
+kaggle_df = kaggle_df[system_df.columns]
+
 final_df = pd.concat([system_df, kaggle_df], ignore_index=True)
-
-# Shuffle dataset
 final_df = final_df.sample(frac=1).reset_index(drop=True)
 
-# Save final dataset
 final_df.to_csv("ml/final_review_dataset.csv", index=False)
-
-print("✅ Final dataset created: final_review_dataset.csv")
+print("✅ Final dataset fixed and merged correctly")

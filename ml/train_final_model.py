@@ -18,25 +18,28 @@ FEATURE_COLUMNS = [
 ]
 
 X = df[FEATURE_COLUMNS]
-y = df["label"]
+y = df["label"].astype(int)   # FORCE BINARY
 
 X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42
+    X, y, test_size=0.2, random_state=42, stratify=y
 )
 
 model = RandomForestClassifier(
     n_estimators=200,
     max_depth=12,
+    class_weight="balanced",   # IMPORTANT
     random_state=42
 )
 
 model.fit(X_train, y_train)
 
-print(classification_report(y_test, model.predict(X_test)))
+y_pred = model.predict(X_test)
+
+print(classification_report(y_test, y_pred, zero_division=0))
 
 joblib.dump(
     {"model": model, "features": FEATURE_COLUMNS},
     "../model/review_model.pkl"
 )
 
-print("✅ Model saved correctly with feature metadata")
+print("✅ Binary ML model trained and saved correctly")
