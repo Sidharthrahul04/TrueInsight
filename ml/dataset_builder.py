@@ -2,7 +2,6 @@ import mysql.connector
 import pandas as pd
 from textblob import TextBlob
 from collections import Counter
-from datetime import datetime
 
 # ---------- DB CONFIG ----------
 db = mysql.connector.connect(
@@ -29,6 +28,7 @@ rows = []
 for r in reviews:
     text = r["review_text"]
 
+    # ---------- TEXT FEATURES ----------
     sentiment = TextBlob(text).sentiment.polarity
     word_count = len(text.split())
     review_length = len(text)
@@ -36,6 +36,7 @@ for r in reviews:
     duplicate_flag = 1 if text_counts[text.lower().strip()] > 1 else 0
     generic_flag = 1 if text.lower().strip() in ["good", "nice", "excellent", "very good"] else 0
 
+    # ---------- USER BEHAVIOR ----------
     cursor.execute(
         "SELECT COUNT(*) AS cnt FROM reviews WHERE user_id=%s",
         (r["user_id"],)
@@ -51,13 +52,32 @@ for r in reviews:
     )
     daily_count = cursor.fetchone()["cnt"]
 
-    # ---------- TEMP LABEL (WEAK SUPERVISION) ----------
-    label = 1 if (
-        duplicate_flag or
-        generic_flag or
-        word_count < 5 or
-        daily_count >= 3
-    ) else 0
+    # ---------- WEIGHTED WEAK SUPERVISION ----------
+    score = 0
+
+    # strong signal
+    if duplicate_flag:
+        score += 3
+
+    # moderate signals
+    if daily_count >= 3:
+        score += 2
+
+    if generic_flag:
+        score += 1
+
+    if word_count < 5:
+        score += 1
+
+    if user_review_count > 20:
+        score += 1
+
+    # suspicious extreme positivity
+    if sentiment > 0.8 and r["rating"] == 5:
+        score += 1
+
+    # final label
+    label = 1 if score >= 3 else 0
 
     rows.append({
         "review_length": review_length,
@@ -74,4 +94,4 @@ for r in reviews:
 df = pd.DataFrame(rows)
 df.to_csv("review_dataset.csv", index=False)
 
-print("✅ Dataset created: review_dataset.csv")
+print("✅ Dataset created with WEIGHTED labeling: review_dataset.csv")

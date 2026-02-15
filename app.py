@@ -6,16 +6,28 @@ from collections import defaultdict
 import joblib
 from textblob import TextBlob
 
-# ---------------- LOAD ML MODEL ----------------
-bundle = joblib.load("model/review_model.pkl")
-model = bundle["model"]
-FEATURE_COLUMNS = bundle["features"]
+# =========================================================
+# LOAD ML MODEL (LOGISTIC REGRESSION OR RANDOM FOREST)
+# =========================================================
+# 👉 Use ONE of the following lines
 
-# ---------------- APP SETUP ----------------
+# Logistic Regression
+bundle = joblib.load("model/review_model_lr.pkl")
+
+# Random Forest (if you want to switch back)
+# bundle = joblib.load("model/review_model.pkl")
+
+model = bundle["model"]
+
+# =========================================================
+# APP SETUP
+# =========================================================
 app = Flask(__name__)
 app.secret_key = "dev-secret"
 
-# ---------------- MYSQL CONFIG ----------------
+# =========================================================
+# MYSQL CONFIG
+# =========================================================
 app.config["MYSQL_HOST"] = "localhost"
 app.config["MYSQL_USER"] = "root"
 app.config["MYSQL_PASSWORD"] = "password"
@@ -23,15 +35,37 @@ app.config["MYSQL_DB"] = "trueinsight"
 
 mysql = MySQL(app)
 
-# ---------------- ML REVIEW ANALYSIS ----------------
-def analyze_reviews(reviews):
+# =========================================================
+# CATEGORY-AWARE RELEVANCE CHECK
+# =========================================================
+def is_review_relevant(review_text, product_category):
+    text = review_text.lower()
+    category = product_category.lower()
+
+    INVALID_KEYWORDS = {
+        "phone": ["spf", "skin", "rash", "irritation", "greasy", "sole", "grip", "running", "walking"],
+        "laptop": ["spf", "skin", "rash", "irritation", "greasy", "sole", "grip", "running", "walking"],
+        "sunscreen": ["camera", "battery", "display", "processor", "performance", "heating", "speaker", "charging"],
+        "shoes": ["camera", "battery", "display", "processor", "performance", "heating", "speaker", "charging"]
+    }
+
+    for word in INVALID_KEYWORDS.get(category, []):
+        if word in text:
+            return False
+
+    return True
+
+# =========================================================
+# ML REVIEW ANALYSIS
+# =========================================================
+def analyze_reviews(reviews, product_category):
     if not reviews:
         return []
 
     texts = [r["text"].lower().strip() for r in reviews]
     analyzed = []
 
-    # ---- TIME BURST DETECTION ----
+    # ---- BURST DETECTION ----
     time_groups = defaultdict(list)
     for i, r in enumerate(reviews):
         minute_key = r["created_at"].replace(second=0, microsecond=0)
@@ -50,12 +84,10 @@ def analyze_reviews(reviews):
         created_at = r["created_at"]
         user_id = r["user_id"]
 
-        # -------- FEATURE EXTRACTION --------
         review_length = len(text)
         word_count = len(text.split())
         sentiment = TextBlob(text).sentiment.polarity
 
-        # user activity
         cur.execute("SELECT COUNT(*) FROM reviews WHERE user_id=%s", (user_id,))
         user_review_count = cur.fetchone()[0]
 
@@ -65,7 +97,6 @@ def analyze_reviews(reviews):
         """, (user_id, created_at))
         daily_review_count = cur.fetchone()[0]
 
-        # rule-derived features
         duplicate_flag = 1 if texts.count(text.lower().strip()) > 1 else 0
         burst_flag = 1 if i in burst_indices else 0
 
@@ -80,8 +111,13 @@ def analyze_reviews(reviews):
             burst_flag
         ]]
 
-        prediction = model.predict(features)[0]
-        suspicious = bool(prediction)
+        # Probability-based decision
+        prob_fake = model.predict_proba(features)[0][1]
+
+        if product_category.lower() == "sunscreen":
+            suspicious = prob_fake >= 0.75
+        else:
+            suspicious = prob_fake >= 0.5
 
         reasons = []
         if duplicate_flag:
@@ -102,7 +138,9 @@ def analyze_reviews(reviews):
     cur.close()
     return analyzed
 
-# ---------------- AUTH ----------------
+# =========================================================
+# AUTH
+# =========================================================
 @app.route("/", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -128,11 +166,7 @@ def register():
         cur = mysql.connection.cursor()
         cur.execute(
             "INSERT INTO users (email, password_hash, created_at) VALUES (%s,%s,%s)",
-            (
-                request.form["email"],
-                generate_password_hash(request.form["password"]),
-                datetime.now()
-            )
+            (request.form["email"], generate_password_hash(request.form["password"]), datetime.now())
         )
         mysql.connection.commit()
         cur.close()
@@ -140,35 +174,24 @@ def register():
 
     return render_template("register.html")
 
-# ---------------- HOME ----------------
+# =========================================================
+# HOME
+# =========================================================
 @app.route("/home")
 def home():
     if "user_id" not in session:
         return redirect("/")
 
-    q = request.args.get("q")
     cur = mysql.connection.cursor()
-
-    if q:
-        cur.execute("""
-            SELECT id,name,price,raw_rating,image_url
-            FROM products
-            WHERE name LIKE %s OR category LIKE %s
-            LIMIT 8
-        """, (f"%{q}%", f"%{q}%"))
-    else:
-        cur.execute("""
-            SELECT id,name,price,raw_rating,image_url
-            FROM products
-            LIMIT 12
-        """)
-
+    cur.execute("SELECT id,name,price,raw_rating,image_url FROM products LIMIT 12")
     products = cur.fetchall()
     cur.close()
 
     return render_template("home.html", products=products)
 
-# ---------------- PRODUCT DETAIL ----------------
+# =========================================================
+# PRODUCT DETAIL
+# =========================================================
 @app.route("/product/<int:product_id>")
 def product_detail(product_id):
     if "user_id" not in session:
@@ -177,7 +200,7 @@ def product_detail(product_id):
     cur = mysql.connection.cursor()
 
     cur.execute("""
-        SELECT name,description,price,raw_rating,image_url
+        SELECT name, category, description, price, raw_rating, image_url
         FROM products WHERE id=%s
     """, (product_id,))
     product = cur.fetchone()
@@ -186,8 +209,10 @@ def product_detail(product_id):
         cur.close()
         return "Product not found", 404
 
+    product_category = product[1]
+
     cur.execute("""
-        SELECT user_id,rating,review_text,created_at
+        SELECT user_id, rating, review_text, created_at
         FROM reviews
         WHERE product_id=%s
         ORDER BY created_at DESC
@@ -195,19 +220,35 @@ def product_detail(product_id):
     raw_reviews = cur.fetchall()
     cur.close()
 
-    reviews = [{
-        "user_id": r[0],
-        "rating": r[1],
-        "text": r[2],
-        "created_at": r[3]
-    } for r in raw_reviews]
+    relevant_reviews = []
+    final_reviews = []
 
-    analyzed = analyze_reviews(reviews)
+    for r in raw_reviews:
+        review = {
+            "user_id": r[0],
+            "rating": r[1],
+            "text": r[2],
+            "created_at": r[3]
+        }
 
-    total = len(analyzed)
-    genuine = [r for r in analyzed if not r["suspicious"]]
+        if not is_review_relevant(r[2], product_category):
+            final_reviews.append({
+                "rating": r[1],
+                "text": r[2],
+                "created_at": r[3],
+                "suspicious": True,
+                "reasons": "Irrelevant to product specifications"
+            })
+        else:
+            relevant_reviews.append(review)
 
-    raw_rating = round(sum(r["rating"] for r in analyzed) / total, 2) if total else 0
+    analyzed = analyze_reviews(relevant_reviews, product_category)
+    final_reviews.extend(analyzed)
+
+    total = len(final_reviews)
+    genuine = [r for r in final_reviews if not r["suspicious"]]
+
+    raw_rating = round(sum(r["rating"] for r in final_reviews) / total, 2) if total else 0
     filtered_rating = round(sum(r["rating"] for r in genuine) / len(genuine), 2) if genuine else 0
 
     integrity = {
@@ -219,18 +260,22 @@ def product_detail(product_id):
     return render_template(
         "product.html",
         product=product,
-        reviews=analyzed,
+        reviews=final_reviews,
         raw_rating=raw_rating,
         filtered_rating=filtered_rating,
         integrity=integrity
     )
 
-# ---------------- LOGOUT ----------------
+# =========================================================
+# LOGOUT
+# =========================================================
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/")
 
-# ---------------- RUN ----------------
+# =========================================================
+# RUN
+# =========================================================
 if __name__ == "__main__":
     app.run(debug=True)
