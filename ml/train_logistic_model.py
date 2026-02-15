@@ -21,8 +21,14 @@ FEATURE_COLUMNS = [
     "burst_flag"
 ]
 
+# ---------------- FORCE BINARY LABEL ----------------
+df["label"] = df["label"].astype(int)
+
+print("\nLabel distribution:")
+print(df["label"].value_counts())
+
 X = df[FEATURE_COLUMNS]
-y = df["label"]   # binary: 0 = genuine, 1 = fake
+y = df["label"]
 
 # ---------------- SPLIT ----------------
 X_train, X_test, y_train, y_test = train_test_split(
@@ -33,11 +39,11 @@ X_train, X_test, y_train, y_test = train_test_split(
     stratify=y
 )
 
-# ---------------- PIPELINE (IMPUTER + MODEL) ----------------
+# ---------------- PIPELINE ----------------
 pipeline = Pipeline([
     ("imputer", SimpleImputer(strategy="median")),
     ("model", LogisticRegression(
-        max_iter=2000,
+        max_iter=3000,
         solver="lbfgs",
         class_weight="balanced"
     ))
@@ -49,8 +55,8 @@ pipeline.fit(X_train, y_train)
 # ---------------- EVALUATE ----------------
 y_pred = pipeline.predict(X_test)
 
-print("LOGISTIC REGRESSION (WITH IMPUTATION) RESULTS")
-print(classification_report(y_test, y_pred))
+print("\nLOGISTIC REGRESSION RESULTS")
+print(classification_report(y_test, y_pred, zero_division=0))
 
 # ---------------- SAVE MODEL ----------------
 os.makedirs("../model", exist_ok=True)
@@ -63,4 +69,4 @@ joblib.dump(
     "../model/review_model_lr.pkl"
 )
 
-print("✅ Logistic Regression pipeline saved correctly")
+print("\n✅ Logistic Regression model saved successfully")
