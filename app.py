@@ -12,10 +12,10 @@ from textblob import TextBlob
 # 👉 Use ONE of the following lines
 
 # Logistic Regression
-bundle = joblib.load("model/review_model_lr.pkl")
+# bundle = joblib.load("model/review_model_lr.pkl")
 
 # Random Forest (if you want to switch back)
-# bundle = joblib.load("model/review_model.pkl")
+bundle = joblib.load("model/review_model.pkl")
 
 model = bundle["model"]
 
